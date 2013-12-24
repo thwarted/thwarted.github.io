@@ -1,0 +1,396 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> 
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Race Conditions with Ajax and PHP Sessions | thwartedefforts</title>
+<link rel="stylesheet" href="style.css" type="text/css" media="screen" /> 
+</head>
+<body>
+<div id="rap">
+<div id="content">
+
+<h1>Race Conditions with Ajax and PHP Sessions</h1>
+This one's been in the hopper for a long time.  Back in February, I came across, through <a href="http://ajaxian.com">Ajaxian</a>, Marc Wandschneider's <a href="http://www.chipmunkninja.com/article/asyncsessions">"Troubles with Asynchronous Ajax Requests and PHP Sessions"</a>, and Harry Fuecks's <a href="http://www.sitepoint.com/blogs/2006/02/27/ajax-and-session-race-conditions/">'AJAX and Session "Race Conditions"'</a>.  These are very interesting and well written articles about an often difficult to understand, debug, and combat problem: <a href="http://en.wikipedia.org/wiki/Race_condition">race conditions</a>.
+
+The responses in the comments are all over the place, from claims to that this is how its supposed to be, to this isn't a problem with PHP it's a problem with HTTP being stateless, to PHP doesn't actually have this problem.  The facts appear to be somewhat different.  In general, everyone's right, at least a little bit.  As with many problems of this type, particularities of each environment can render different results.
+
+One of the problem with race conditions is that it is often difficult to actually witness the ramifications of one when it happens, especially if you are not aware of it.  If you've used PHP's built-in, default session handling (that uses files), you'll never come across the problem.  However, things get interesting once you start using <a href="http://us2.php.net/manual/en/function.session-set-save-handler.php">session_set_save_handler</a> to write your own session handler.
+<!--more-->
+<h2><a name="multiprocessing-but-non-threaded-environment">A Multi-processing but non-Threaded Environment</a></h2>
+Ajax applications could logically be thought of as being (multi-)threaded, even though the environment (javascript on the client, your-favorite-language on the server) does not explicitly mention threads and multi-processing concepts (like critical sections, shared variables, etc).  Java has a <tt>synchronized</tt> keyword and statement that lets you define the critical sections; PHP, for example, like all raw CGI environments, does not.
+
+<div style="width: 20em;" class="inline-sidebar"><h4>Context Switching</h4>Admittedly, this is a relatively simplified description of multithreading, multitasking and multiprocessing, but it should fit our needs.  The fact is, if your computer only has one processor, only one thing can be going on at a time, but the operating system switches between things so fast, it seems like things are happening all at once.  The basis of Ajax being effectively multiprocessing is that, with async remote calls, you end up with two processors (the client and server) executing code on behalf of a single <em>user-centric</em> task, perhaps at the same time.  For more information, check out the Wikipedia article on <a href="http://en.wikipedia.org/wiki/Computer_multitasking">Computer Multitasking, Â§ "cooperative multitasking / time-sharing"</a>.</div>Even environments that maintain some kind of persistent state on the server sometimes try to avoid exposing the programmer to multi-processing constructs.  The fact is, since multiple Ajax requests can be triggered asynchronously and thus be pending at the same time, many threads/processes may be executing on the client's behalf within the context of the server.  Any production quality web server can handle multiple simultaneous requests (<a href="http://httpd.apache.org/docs/2.2/mpm.html">apache does so via a variety of methods</a>), so this capability should be expected.
+
+In some respects, javascript could be considered a very simple form of cooperative multi-threading, with scheduling points being explicit in the way functions are called and events are processed.  When an event is received, a thread is started to call all the event handling functions in the DOM tree during the bubbling and capturing phases.  These kinds of threads end if the event is cancelled or when all handler functions have been called.  In a real multi-processing system, these threads may have their execution interleaved; in javascript, each thread executes from beginning to end without implicit interruption or preemption.
+
+You have to explicitly yield to let the browser do other processing in many cases.  The following code will make the browser completely unresponsive:
+<pre>
+while (1) { }
+</pre>
+because it never yields execution.  If your code does not yield its execution, a single routine like the above can take over the entire CPU.  When this happens, the browser may show a dialog saying that a script is taking a long time, and ask if you want to kill it; that is, <em>if</em> the browser is able to interrupt the script's execution.  There is no direct way to yield execution in Javascript, but there is a round-about way to start a new thread, or yield the processor and continue processing your code later, by invoking an event.<img id="image95" src="images/slowscript.png" alt="slow script warning" style="float: right; margin: 0 1em 0 1em;" border="0" />  
+
+In languages and run-times that support threads, you start a thread with a construct like the following (in perl):
+<pre>
+sub work {
+    do_stuff;
+}
+my $thrid = threads->new(&work);
+</pre>
+This code creates a new thread that starts with the <tt>work</tt> subroutine (which could of course be defined as an anonymous subroutine or closure, in-line).  The <tt>work</tt> subroutine can go off and do pretty much whatever it wants at that point, independent of its parent thread.  
+
+As it says in the <tt>perlthrtut</tt>(1) man page,
+<div style="margin-left: 5em; margin-bottom: 1em; padding: .5em 1em .5em 1em; width: 50%; background-color: #ccc; color: black;">There are times when you may find it useful to have a thread explicitly give up the CPU to another thread.  You may be doing something processor-intensive and want to make sure that the user-interface thread gets called frequently.  Regardless, there are times that you might want a thread to give up the processor.</div>
+Perl&nbsp;threading and Java provide a <tt>yield</tt> function that does just that (as do many other languages).  Javascript provides no such functionality, but you can emulate it through the event model.
+
+Consider the following javascript pseudo-code:
+<pre>
+function coop() {
+    do_something;
+    do_something_else;
+    do_additional_stuff;
+}
+</pre>
+<div class="inline-sidebar" style="font-size: .8em;"><h4>Synchronous XMLHttpRequest</h4>I'm not sure why the synchronous XMLHttpRequest call is synchronous to the entire browser rather than to the javascript execution context (most likely an implementation detail/limitation).  Making it synchronous to the browser seems to make it a completely useless capability.  It seems reasonable that an ideal synchronous call would store the current execution context just like creating a closure does, except including the call stack.  When the call returns, that entire context is picked up and resumed.  There would still be a lot of error handling to do, in the case that a synchronous call might fail (because of transport problems, timeouts, server issues, etc), but this could reasonably be handled with javascript's exception handling support.  Without any functionality that effectively pauses, suspends, or sleeps an executing javascript routine, a useful synchronous remote call implementation can not even be emulated.</div>Pretty straight-forward.  As written, calling the <tt>coop</tt> function will execute from beginning to end without interruption.  This could be modified to the following semantically equivalent code:
+<pre>
+function callfn(f) {
+    f();
+}
+function coop() {
+    do_something;
+    callfn(function() {
+       do_something_else;
+       callfn(function() {
+          do_additional_stuff;
+       });
+    });
+}
+</pre>Again, this would execute from beginning to end without interruption.  But the <tt>callfn</tt> function could be changed to use <tt>setTimeout</tt> to fire off an event, effectively yielding execution to other threads, er, event handlers, <em>within the contenxt of the browser</em>.  Say we change the definition of <tt>callfn</tt> to the following (and rename it to <tt>yield_timeslice</tt>):
+<pre>
+function yield_timeslice(f) {
+     /* see the side bar "Browser Time Resolution" for why 11 is used here */
+    setTimeout(f, 11);
+}
+</pre>
+or the following:
+<pre>
+function yield_timeslice(f) {
+    var xhr = new XMLHttpRequest;
+    xhr.open('GET', 'work.cgi?do-server-stuff');
+    xhr.onreadystatechange = function(s) {
+       if (s == 4) {
+          f();
+       }
+    };
+    xhr.send('');
+}
+</pre>
+Because of the delay in execution, this ends up being similar to a construct you might see in other languages that support cooperative multi-tasking (as an obscure example, take <a href="http://mirrors.ccs.neu.edu/MOO/html/ProgrammersManual_54.html#IDX112">LambdaMOO's suspend() function</a>):
+<pre>
+function coop() { /* logical series of execution */
+    do_something;
+    yield_timeslice();
+    do_something_else;
+    yield_timeslice();
+    do_additional_stuff;
+}
+function coop() { /* code to physically implement the above */
+    do_something;
+    yield_timeslice(function(){ 
+        do_something_else;
+        yield_timeslice(function(){
+            do_additional_stuff;
+        });
+    });
+}
+</pre>
+While it may be useful in some specific corner cases, you are most likely not going to write your Ajax applications and routines to work like the above.  The nested closure syntax gets really hairy and confusing at any sufficiently useful nesting depth (and you might run into some of those really nasty memory leak problems with excessive use).  Plus, you can't use this method in a loop, where it would be most useful for long-running routines.  The idea here is that, while it doesn't explicitly claim any kind of multi-processing support, multiple things can be happening at the same time and in an unpredictable order among different <em><strong>logical</strong> threads of execution</em>.  The client might be accepting input in a textbox, firing off requests to the server to fill in an auto-complete, the server might access a database and send back results.  The <tt>onchange</tt> event handler, the server side code that finds and returns the results, and the javascript code that updates the document with the results all make up one logical thread.  But because of their asynchronous processing, this single logical thread can be subjected to the same problems that real threaded environments have to deal with.  Anyone who's implemented Ajax based auto-complete functionality and didn't take into account that individual responses can be returned in a different order or be delayed may have seen a race condition at work in their client side code.
+
+<div class="inline-sidebar" style="font-size: .8em; width: 25em;"><h4>Browser Time Resolution</h4>Depending on the implementation of <tt>setTimeout</tt> and the speed of the client computer, you may need to specify a delay greater than zero in order to delay execution long enough to let other event handlers execute before <tt>f</tt> is called.  If you have firebug installed in Firefox, try the following two statements on a single line in the firebug console:<p style="margin: 1em 0 1em 3em;"><tt>setTimeout(function(){<br />console.log("one");}, 1);<br />setTimeout(function(){<br />console.log("two");}, 0);</tt></p>and experiment with different values for the two timeouts, trying to get it to print "two" before it prints "one".  On my desktop, it seems Firefox only has 1/100 of a second resolution, making 11 and 10 the sweetspot.  Logically, any timeout for the second <tt>setTimeout</tt> call that is smaller than the timeout specified for the first should have "two" printed before "one", but that is not always the case.  Add another one that prints "three" and experiment with various timeouts to get it to print the numbers in reverse order.</div>Now that we've seen that the asynchronous nature of javascript leads to what amounts to multi-processing, and that multi-processing can be tied in with the server, let's move on to dealing with race conditions that can actually crop up on the server side, which is designed to be multi-processing.
+
+<h2><a name="default-php-session-handler">The Default PHP Session Handler</a></h2>
+The built-in PHP session handler is designed for use with a single web server, since it stores the session data on the local filesystem.  Once you need to scale up to multiple web servers, another solution is necessary.  Fortunately, for the developer who will roll their own PHP session handler, there's <a href="http://www.php.net/manual/en/function.session-set-save-handler.php#AEN178206">sample code on the session_set_save_handler documentation page</a>, which, one would be led to believe, is pretty much how the built-in session handler is implemented.  And it is, almost.
+
+What this sample code does not include is the fact that the built-in session handler uses the <a href="http://unixhelp.ed.ac.uk/CGI/man-cgi?flock+2">flock(2) system call</a> (available as <a href="http://us2.php.net/manual/en/function.flock.php">flock</a> in PHP).  This can be verified by using <a href="http://sourceforge.net/projects/strace/">strace</a> to list all the system calls being made by a process.  Here's the important bit:
+<pre>
+open("/var/lib/php/session/sess_XXXXXXXXXXXXXXXXXXXXXXXXXX", O_RDWR|O_CREAT, 0600) = 18
+flock(18, LOCK_EX)                      = 0
+fcntl64(18, F_SETFD, FD_CLOEXEC)        = 0
+fstat64(18, {st_mode=S_IFREG|0600, st_size=11, ...}) = 0
+pread64(18, "count|i:17;", 11, 0)       = 11
+. . . .
+pwrite64(18, "count|i:18;", 11, 0)      = 11
+close(18)                               = 0
+</pre>
+This shows us a couple of things.  PHP tries to open the file that will store the serialized session data, creating the file if necessary.  Then it uses flock to obtain an exclusive lock on the file (if there was already a lock on the file using flock and you were watching strace's output live, there would be a pause before the result (0) of the flock call is printed).  Once flock returns 0, PHP knows it has exclusive access to the contents of the session file (at least for all the other PHP processes that would access it), so then it reads it.  In this case, this session contained one variable, <tt>count</tt>, set to the value 17.  The PHP script executes, modifies the session variables in some way, in this case by adding one to <tt>count</tt>, and then writes the session back to the file.  Note that PHP does not explicitly release the lock.  It is exploiting a feature of flock that automatically releases locks when the file is closed.
+
+So the read function in the <a href="http://www.php.net/manual/en/function.session-set-save-handler.php#AEN178206">sample <tt>session_set_save_handler</tt> code</a> is missing a call to flock.  Leaving out some of the complexities makes the code easy to understand, but unfortunately does not provide an accurate description of everything that needs to be done in a session handler.  Whoever originally wrote that sample code most likely never intended someone to actually use it.  Nevertheless, it is a good place to start from when implementing your own session handler, so many people do.
+
+<div style="width: 20em;" class="inline-sidebar"><h4>Other System Calls</h4>In case you're curious, the <tt>fcntl</tt> call configures the file descriptor for the session file to be closed when PHP spawns a sub-process (by using the <a href="http://www.php.net/manual/en/function.system.php">system()</a> function or <a href="http://www.php.net/manual/en/language.operators.execution.php">backticks</a>, for example), the sub-process won't have access to the file descriptor of the open file that is storing session data (if it did, it might be a security hole). The <tt>fstat</tt> is used to get information about the file.  This information can be used to find out how big the file is so the entire file can be read with one operation (the call to <tt>pread</tt>) into a suitably sized buffer.  The information returned by fstat is most likely copied into PHP's <a href="http://us2.php.net/manual/en/function.clearstatcache.php">stat cache</a> also.</div>The problem arises, as is outlined in the cited articles above, when multiple requests can be made at the same time. The built-in PHP session handler handles maintaining exclusive access to the session data, so most simple, low-load (meaning one one web server) websites don't experience a problem.  And even if you use your own session handler that doesn't implement any locking, the progress that the users makes through your site, downloading a page, viewing it, moving on to the next one, is so slow that contention for the session data is rarely, if ever, an issue.  But then Ajax enters the picture.
+
+Since Ajax calls are asynchronous, and a multi-processing web server, like Apache, can handle multiple requests at once, then the same session data may be in use by multiple threads of execution on the server at the same time.  And even then, this may be hard to observe if your server-side code doesn't do any heavy processing and if Ajax requests return relatively quickly.
+
+<h2><a name="observing-the-race-condition">Observing the Race Condition</a></h2>
+In order to investigate this problem more throughly, and actually put a face on it so it is easier to recognize and talk about, I wrote a little <a href="http://race.phux.net/race-condition-php-example/rc-test.php">HTML form that talks to some PHP code using different session handling and locking methods</a>.  It is interactive, allowing the user to change which method is used to store and access session data, so the ramifications are observable in real-time.
+
+This application implements a simple producer-consumer model.  There are two loops, one does an Ajax call to the server to the producer function, which increments a counter variable in the session.  The other does an Ajax call to the consumer function on the server, which decrements the counter variable in the session.
+
+Some of the methods implement locking and some do not.  When locking is not used, multiple requests (represented in these diagrams as processes P1, P2 and P3) access the session data without any consideration for the other processes and what state the session data might be in.  The running time of the requests are indicated by the height of each process's colored area (the actual run times are unimportant, only the relative start times and durations).<img style="display: block; margin-left: 3em;" id="image94" src="images/session-access-without-locking.png" alt="interleaved requests" />No matter how P2 and P3 change the session data, the only changes that will be reflected in the session are those that P1 made because they were written last.
+
+When locking is used, the process can start up, request a lock on the session data before it reads it, and then get a consistent read of the session once it acquires exclusive access to it.  In this diagram, note all all reads occur after writes.
+<img style="display: block; margin-left: 3em;"  id="image93" src="images/session-access-with-locking.png" alt="interleaved with locking" />
+The process execution is interleaved, but access to the session data is serialized.  The process is waiting for the lock to be released during the period between when the process requests the session lock and when the session is read.
+
+This means that your session data will remain consistent, but it also means that while processes P2 and P3 are waiting for their turn to acquire the lock, nothing is happening.  This may not be that important if all of the requests change or write to the session data, but if P2 just needs to <em>read</em> the session data (perhaps to get a login identifier), it is being held up for no reason.
+
+<h3>The Demo App Interface</h3>
+Along the left side of the <a href="http://race.phux.net/race-condition-php-example/rc-test.php">race condition demo app</a>, there's a text box that will show the results of the Ajax requests.  The right side lists the different implementations of session handling code.  These types are:
+<a href="http://race.phux.net/race-condition-php-example/rc-test.php"><img id="image90" src="images/racecondition-shot.thumbnail.png" alt="race condition app screenshot" title="race condition app screenshot" style="display: block; float: right; padding: 1.5em; border: 1px solid black;" border="0" /></a>
+<dl>
+ <dt style="font-weight: bold;">php default (files in temporary directory), uses flock</dt>
+  <dd>the one you end up using if you don't use <tt>session_set_save_handler</tt></dd>
+ <dt style="font-weight: bold;">custom handler, files, no locking (<a href="http://race.phux.net/code/session_files.phps">session_files.php</a>)</dt>
+  <dd>based on the <a href="http://us2.php.net/manual/en/function.session-set-save-handler.php#AEN178206">sample <tt>session_set_save_handler</tt> code</a> in the PHP documentation.  No locking.</dd>
+ <dt style="font-weight: bold;">custom handler, files, per session locking using flock (<a href="http://race.phux.net/code/session_fileslock.phps">session_fileslock.php</a>)</dt>
+  <dd>same as the above, but includes locking access to the entire session using <tt>flock</tt></dd>
+ <dt style="font-weight: bold;">custom handler, mysql, one row per session, no locking (<a href="http://race.phux.net/code/session_mysql.phps">session_mysql.php</a>)</dt>
+  <dd>the "standard" session handler one would write to store session data in a MySQL database.  Each row stores the data for one session, the serialized session data is stored in a field of type <tt>text</tt>.  No locking.</dd>
+ <dt style="font-weight: bold;">custom handler, mysql, one row per session, with a mysql advisory lock per session (<a href="http://race.phux.net/code/session_mysqlsesslock.phps">session_mysqlsesslock.php</a>)</dt>
+  <dd>same as the above, except before the session is read, a <a href="http://dev.mysql.com/doc/refman/4.1/en/miscellaneous-functions.html#id3020390">mysql advisory lock</a> is acquired, and it released when the session is closed</dd>
+ <dt style="font-weight: bold;">custom handler, mysql, one row per variable, no locking (<a href="http://race.phux.net/code/session_mysqlpervar.phps">session_mysqlpervar.php</a>)</dt>
+  <dd>stores the session data in MySQL, but uses one row per <strong>session variable</strong>, not a row for the entire session.  No locking.</dd>
+ <dt style="font-weight: bold;">custom handler, mysql, one row per variable, with a mysql advisory lock per variable (<a href="http://race.phux.net/code/session_mysqlpervar.phps">session_mysqlpervar.php</a>)</dt>
+  <dd>same as the above, but uses a MySQL advisory lock to allow independent, application controlled exclusive access to each session variable without locking the entire session</dd>
+</dl>
+You can select different session handlers, then hit the "start" button to begin a series of requests.
+
+<h3>Resource Contention</h3> 
+Hitting the "start" button begins the loops (implemented as functions that use <tt>setTimeout</tt> to call themselves) that invoke the increment and decrement functions on the server.  The functions on the server simulate "work" by randomly sleeping while they hold the lock on the session (or the specific session variable).  The code is very simple:<div class="inline-sidebar"><h4>isset in PHP</h4>This code does not just pull the value of <tt>$_SESSION['count']</tt> into a variable, it wraps the assignment in a tertiary operator.  This avoids a PHP warning (if you are running with the appropriate <tt>error_reporting</tt> level) and helps to sanitize the input data, making sure it's an integer.  Also, PHP's post-increment operator (<tt>++</tt>) is not equivalent to <tt>$c = $c + 1</tt>, in that the later does automatic conversion to an integer type.  This is because the <a href="http://www.php.net/manual/en/language.operators.increment.php">increment operator</a> can be used to increment simple characters also (<tt>$c = 'a'; $c++; $c === 'b'</tt>).</div>
+<pre>
+$c = (isset($_SESSION['count']) ? intval($_SESSION['count']) : 0);
+$c++;
+print date('i:s').": incr $c (using ".$_REQUEST['sesstype'].")";
+sleep(rand(1,2));
+$_SESSION['count'] = $c;
+</pre>
+It reads the <tt>count</tt> variable from the session, increments it, prints some status information (which is displayed back to the webpage, prefixed with the minute and second of the current time), simulates a random amount of "work", then assigns the new value back to the session.  The script then ends.
+
+Watch the output of using the different session handler functions carefully.  The ideal situation is that the series of numbers shown should never skip.  Every time it says "incr", the number should be one more than the previous line.  Whenever it says "decr", it should be one less.  When that doesn't happen, there is contention for the session data which causes inconsistent results.  Note that switching between different handlers that use the same storage method may cause the exact numbers that show to be different.  What should be consistent is how the values change, only by one, for each return result.
+
+Here is a sample run using the mysql handler without locking:
+<pre>
+starting with mysql
+45:35: incr 4 (using mysql)
+45:35: decr 2 (using mysql)
+45:37: incr 3 (using mysql)
+45:38: decr 2 (using mysql)
+45:40: incr 3 (using mysql)
+45:41: decr 1 (using mysql)
+45:43: incr 2 (using mysql)
+45:44: decr 0 (using mysql)
+45:45: incr 3 (using mysql)
+45:47: decr 2 (using mysql)
+</pre>
+Note how incr and decr operations are alternating, but the values are not.  This is because the session data is read twice before it is written once.  At 45:35, both the incr and decr requests read the session and see a value of 3.  Incr then increments to 4, and decr decrements it to 2.  Incr writes and closes its session, storing 4.  Decr then writes and closes its session, storing 2.  At 45:37, the next iteration of incr reads a 2 out of the session and increments it to 3.  Keep in mind that the simulated "work" could take either one or two seconds, and this unpredictability makes the race condition much more evident.
+
+Here's a sample run when a method that uses locking is selected:
+<pre>
+starting with fileslock
+21:59: incr 1 (using fileslock)
+22:00: decr 0 (using fileslock)
+22:02: incr 1 (using fileslock)
+22:04: decr 0 (using fileslock)
+22:06: incr 1 (using fileslock)
+22:09: incr 2 (using fileslock)
+22:10: decr 1 (using fileslock)
+22:12: incr 2 (using fileslock)
+22:14: decr 1 (using fileslock)
+22:16: incr 2 (using fileslock)
+</pre>
+Here, all the operations are consistent.  When incrementing, the new value is always one more than the last one, and decrementing always results in a value one less than the last one.  Notice the two incr operations in a row at 22:06 and 22:09.  This is entirely possible and to be expected when tasks are interleaved.  But this did not cause the state of the session to become inconsistent.  The two incr calls in a row properly incremented the variable twice.  No values were skipped.
+
+Admittedly, this is not a strict producer/consumer model application.  The decr operation could very well decrement ("consume") to values less than zero if decr was called more often than incr.  Modifying the code to have the decrement operation wait until the counter has been incremented (thereby producing a <a href="http://en.wikipedia.org/wiki/Semaphore_%28programming%29">semaphore</a>) is left as an exercise for the reader (this is a lot easier when the session implementation allows each session variable to be locked independently; we'll cover this in the next section).
+
+<h2><a name="minimizing-lock-holding">Minimizing Lock Holding Time</a></h2>
+
+For a while, Linux's <abbr title="Symmetric Multi-Processing">SMP</abbr> implementation used what was called the "<a href="http://www.google.com/search?q=linux+big+kernel+lock">Big Kernel Lock</a>".  Only one process could be executing kernel code at the same time.  Locking the entire session is similar to this, as it only lets one process/request be handled at a time.  Even if those processes would not manipulate each other's data or only need to read the session and not update it, only one thing could happen at a time.  The asynchronous calls end up being serialized on the server as soon as they call <tt>session_start</tt>, since that is where a session lock is acquired -- the browser is still responsive, but processing is done serially.  The default PHP session handler errs on the side of caution, even if your script only ever reads data from the session, it still locks it.  This could negatively impact performance.
+
+A solution to this to reduce the amount of code over which a lock is held.  Using the default session handler, locking is implicit and only the entire session can be locked.  By writing our own session handler that operates on a per-variable basis, we can overcome this limitation and provide explicit locking functionality, giving the programmer greater control.
+
+Thankfully, through the use of PHP 5.1.6's <a href="http://www.php.net/manual/en/ref.spl.php">Standard PHP Library</a>, we can override the base functionality of the <tt>$_SESSION</tt> variable and replace it with an object that implements the same Array-like interface.  That what the <a href="http://race.phux.net/code/session_mysqlpervar.phps">mysql-per-var</a> session handler mentioned above does.
+
+This object, named <tt>ThreadSafeSessionArray</tt> (perhaps a misnomer, it could perhaps use a better name), implements the Countable, ArrayAccess, and Iterator interfaces, making it almost a drop-in replacement for your current session handler.  It provides three additional functions to allow fine-grained control of session variable locking, <tt>acquire</tt>, <tt>release</tt>, and <tt>synchronize</tt>.  You merely need to replace your call to <tt>session_start()</tt> with:
+<pre>
+require_once "session_mysqlpervar.php";
+$_SESSION = new ThreadSafeSessionArray();
+</pre>
+Including this file and instantiating ThreadSafeSessionArray sets up the session environment by calling <tt>session_set_save_handler</tt> and <tt>session_start</tt> for you.  You'll also need to create a table with the following definition:
+<pre>
+CREATE TABLE `sessvar` (
+  `sesskey` varchar(32) NOT NULL default '',
+  `lastused` timestamp NOT NULL,
+  `varkey` varchar(40) NOT NULL default '',
+  `varval` text,
+  UNIQUE KEY `sesskey` (`sesskey`,`varkey`)
+)
+</pre>
+in your database (you may need to change the size of <tt>sesskey</tt> depending on <a href="http://www.php.net/manual/en/ref.session.php#ini.session.hash-function">how your session id is calculated</a>), and set the constants <tt>DBHOST</tt>, <tt>DATABASE</tt>, <tt>DBUSER</tt>, and <tt>DBPASS</tt> (see the code for more info).
+
+The code that is invoked in the demo app for the <tt>mysqlpervarlock</tt> handler uses <tt>acquire</tt> and <tt>release</tt> to control exclusive access to <strong>just</strong> the <tt>count</tt> session variable:
+<pre>
+$_SESSION->acquire('count');
+
+    $c = (isset($_SESSION['count']) ? intval($_SESSION['count']) : 0);
+    $c++;
+    print date('i:s').": incr $c (using ".$_REQUEST['sesstype'].")";
+    sleep(rand(1,2));
+    $_SESSION['count'] = $c;
+
+$_SESSION->release('count');
+</pre>
+The only difference between this code and the ones that do not lock in the demo app are the addition of the calls to <tt>$_SESSION-&gt;acquire('count')</tt> and <tt>$_SESSION-&gt;release('count')</tt>.  You only need to lock a session variable if you are going to update or change it.  It is recommended that you only hold a lock for the shortest time necessary.  I split the code up into multiple lines (assignment to <tt>$c</tt>, incrementing <tt>$c</tt> and storing <tt>$c</tt> back into the session) to make it more obvious that the act of incrementing a variable is a non-atomic operation.  Even the following code, given that <tt>$_SESSION['count']</tt> contains an integer:
+<pre>
+$_SESSION['count']++; # case 1
+some_function(1, 2, $_SESSION['count']++); # case 2
+</pre>
+does a read operation, then the increment, then a write operation all in one PHP statement for <strong>case 1</strong>. For <strong>case 2</strong>, it does a read of <tt>$_SESSION['count']</tt>, then <strong>calls <tt>some_function</tt></strong> (which could do any number of unknown things and take who-knows-how long!), then increments the session variable, finally writing it.  There is a unpredictable amount of delay, albeit small, between these operations, so you would even want to wrap that single statement in calls to the locking functions:
+<pre>
+$_SESSION->acquire('count');
+$_SESSION['count']++;
+$_SESSION->release('count');
+</pre>
+The code between the <tt>acquire</tt> and <tt>release</tt> calls is called the <a href="http://en.wikipedia.org/wiki/Critical_section">critical section</a>.  The general case looks like:
+<pre>
+$_SESSION->acquire( ... variable name ... );
+ ... critical section ...
+$_SESSION->release( ... variable name ... );
+</pre>
+If you have problems making sure your locks match up, you can use the <tt>$_SESSION->synchronize</tt> function to create a loop that will acquire and release the lock for the body of the loop:<div class="inline-sidebar"><h4>How -&gt;synchronize works</h4>The <tt>synchronize</tt> function returns a two element array.  The first element is an object of type ThreadSafeSessionLock, and the second is a false value.  The ThreadSafeSessionLock class implements only a constructor and a destructor.  The first time through the loop, the variable <tt>$lock</tt> is a reference to the ThreadSafeSessionLock object, which acquired a lock on the passed variable name in its constructor.  The second time through the loop, the <tt>if (!$lock)</tt> breaks out of the loop because the second element is logically false.  The loop body, the "critical section", is only executed once.  After the for statement is complete, the return value of $_SESSION-&gt;synchronize</tt> is discarded, calling the destructor on the ThreadSafeSessionLock object, which releases the lock.  The second element is necessary so that there are no references to the ThreadSafeSessionLock object at the end of the loop; in PHP, the loop variable survives the body of the loop.  With only one element, the object would never be garbaged collected (<tt>__destruct</tt> wouldn't be called), and the lock would never be released.</div>
+<pre>
+foreach ($_SESSION->synchronize( ... variable name ... ) as $lock) {
+    if (!$lock) break;
+
+    ... critical section ...
+}
+</pre>
+This has the advantage of placing all your locking related code physically close together, all the code related to the mutual exclusion of this critial section is immediately adjacent.  This can be a big advantage when debugging critical sections that are large, contain numerous function calls, and/or relatively deep statement nesting.  Of course, you shouldn't use the variable <tt>$lock</tt> within the critical section, doing so might cause the lock to be released inadvertently.  You can use any variable name to hold the ThreadSafeSessionLock object during this loop.  The disadvantage here is that it is easy to forget to include the <tt>if (!$lock) break</tt> statement, there by causing the loop to execute more than once.
+
+An alternative to the above, which may be more explict in its intent, is the following <tt>for</tt> loop:
+<pre>
+for ($_SESSION->acquire( ... variable name ... ); 
+     $_SESSION->locked( ... variable name ... ); 
+     $_SESSION->release( ... variable name ... )) {
+
+   ... critical section ...
+
+}
+</pre>
+This has somewhat of a disadvantage in that the variable name needs to be repeated three times, the C-style <tt>for</tt> loop is pretty long, and it doesn't read very well.
+
+The <tt>rc-decr-varlock.php</tt> file in the demo app uses <tt>acquire</tt> and <tt>release</tt>, and the <tt>rc-incr-varlock.php</tt> file uses <tt>-&gt;synchronize</tt>.  Any of the three styles can be used, they all effectively do the same thing.  It's a matter of maintenance and taste.
+
+Things to keep in mind that are just good programming practices when dealing with concurrent code and locking:<ul>
+ <li>release a lock in the same function/scope that the lock was acquired.  Using a <tt>foreach</tt> around <tt>$_SESSION-&gt;synchronized</tt> can help with this.</li>
+ <li>make your critical sections as small as possible, do no more and no less in them than necessary.</li>
+</ul>
+
+There are limitations of this implementation though.  First off, you can only hold one lock at a time, acquiring a new lock will release any other lock you've already acquired (this is how MySQL's advisory lock functions work).  Also, since the locking is advisory and not enforced on each access of the session variable, there is nothing to stop another request or process from accessing the session variable without doing the locking first.  You could try to create explicit locking by changing all the session reading functions to acquire a lock; this would minimize the amount of code executed for each lock acquired, but locks would still be held longer than necessary (until the end of the script).
+
+<h2><a name="why-per-variable-locking">Why is per-variable locking important?</a></h2>
+
+Your server-side Ajax code should be made to execute as fast as possible, to do its thing and get out of the way.  This leads to a more responsive user-interface.  However, some Ajax related functionality, like perhaps a database search, could take a long time.  Here are two quick (and dirty) files that might be used to implement this functionality (for various reasons, we want to record the results of the last search the user did in the session, maybe to provide a history function, or maybe to do auto-complete within the search results):
+<pre>
+# search.php
+session_start();
+$_SESSION['searchresult'] = do_search();  # searching takes a long time
+print join("\n", $_SESSION['searchresult']);
+</pre>
+<pre>
+# recordposition.php
+session_start();
+# really should sanitize this input!
+$_SESSION['popup-position'][$_GET['popup']] = $_GET['xy'];
+</pre>
+The user initiates a search, which does an Ajax request to <tt>search.php</tt>, and while they are waiting and watching your custom Web2.0 throbber, they decide to drag some of of the DHTML windows around and rearrange the content.  Each drag operation invokes this <tt>recordposition.php</tt> file when the user releases the mouse button.  But while they have been re-arranging things on the screen, the search has been going on the whole time.  When <tt>search.php</tt> finally ends, it will write the entire session, including the original positions of the DHTML windows, thereby losing the changes that have happened in the meantime.
+
+This happens because the entire session is read and written in one step, as we saw with the demo app.  The per-variable locking, and per-variable updating, allows each file/function to interact with only its part of the session data, without touching the session data for other routines.  These two files would need to be changed to the following code:
+<pre>
+# search.php
+$_SESSION = new ThreadSafeSessionArray();
+
+$results = do_search();  # searching takes a long time
+foreach ($_SESSION->synchronize('searchresult') as $lock) {
+    if (!$lock) break;
+
+    $_SESSION['searchresult'] = $results
+}
+print join("\n", $results);
+</pre>
+<pre>
+# recordposition.php
+$_SESSION = new ThreadSafeSessionArray();
+
+foreach ($_SESSION->synchronize('popup-position') as $lock) {
+    if (!$lock) break;
+
+    # really should sanitize this input!
+    $_SESSION['popup-position'][$_GET['popup']] = $_GET['xy'];
+}
+</pre>
+
+<h2><a name="rolling-your-own-session-handler">Rolling Your Own Session Handler</a></h2>
+
+<div class="inline-sidebar"><h4>Release Locks during <em>write</em> or <em>close</em>?</h4>Note that when using locks, you want to release the lock when PHP "closes" the session, not when it writes it.  It seems that PHP has an optimization whereby it only writes the session data if the session variables were written to, so the function you designate to use for session writing might never be called.  The close function is always called though, independent of if there were changes to the session or not.  Even if the write function was not called, in the case of flock or MySQL advisory locks the locks are released when the file descriptor is closed (at script end) or when the script disconnects from the database.  But if you use <a href="http://www.php.net/manual/en/features.persistent-connections.php">persistent database connections</a>, the lock will continue to be held and will never be released because your write function is never executed.</div>
+
+Note the order of events from the strace above:
+<ol>
+    <li>acquire lock</li>
+    <li>read session data</li>
+    <li>do some processing</li>
+    <li>write session data</li>
+    <li>release lock (implicit at file close time)</li>
+</ol>
+When you decide to use your own session handler, these same steps should be followed if you want to ensure that multiple calls don't trample all over each other.  Remember, there's a greater chance that Ajax requests would have contention for the session data than just regular web pages would.  You should acquire some kind of lock in the <em>session-open</em> or <em>session-reading</em> functions and ensure that the lock is released after you've written the session data when the session is closed.  The kind of lock is dependent on the underlying system being used to store sessions.<ul><li>For files, flock makes the most sense.  Unfortunately, this means your sessions are restricted to a single machine, and even if you did have a shared file area (perhaps over NFS), <a href="http://www.time-travellers.org/shane/papers/NFS_considered_harmful.html">reliable file locking may not even be available (see § III b: "File Locking Semantics")</a>.</li>
+<li>For session data stored in on shared database server in a table, you could use functionality provided by the database software.  MySQL has advisory locks via the <a href="http://dev.mysql.com/doc/refman/4.1/en/miscellaneous-functions.html#id2834626">get_lock()/release_lock()</a> calls, and PostgreSQL has a <a href="http://developer.postgresql.org/pgdocs/postgres/explicit-locking.html#ADVISORY-LOCKS">similar feature</a>.</li>
+<li>If your application is limited to ephemeral session data, you could store session data in <a href="http://www.danga.com/memcached/">memcached</a> and use memcached's atomic increment operation to create advisory locks.</li>
+</ul>
+
+Anything other than local files with flock can run into problems.  flock is nice because locks are released when the file is closed, and <em>all</em> files are eventually closed when your script ends (either because the process exits or because the web server cleans up the environment after your script relinquishes control).
+
+But what about the user or client aborting the request while it is in progress (PHP's <a href="http://us2.php.net/manual/en/ref.misc.php#ini.ignore-user-abort">ignore_user_abort setting and connection handling features</a> might help with this)?  Or your script throwing an uncaught exception or exiting early?  Or an unrecoverable fatal error occurs?  The biggest problems are often not getting the order of events correct in your code, but being able to properly manage the issues that crop up when things don't execute as planned.
+
+Advisory locks in MySQL and PostgreSQL are automatically released when the client disconnects.  Unfortunately, this is incompatible with using persistent database connections, which are often used to increase performance (but see <a href="http://www.mysql.com/news-and-events/newsletter/2002-11/a0000000086.html">this article about it</a>).  If you have multiple, replicated, load balanced database servers, even these built-in advisory locks might not work in every situation because the advisory locks do not span servers.
+
+Creating locks with memcached has a similar problem.  The locks do not go away automatically when the client disconnects, but they can be made to expire and be removed from the cache after a specified period of time.  This has the opposite problem compared to above.  Rather than the lock not being released when it needs to be, the lock could expire and disappear before you are done with it.  You will need to decide how long to set the expiration on the keys used for locking in memcached, so that they are long enough so that the locks exist for the length of the average (or the longest) request, and short enough so that other processes do not experience starvation if they are not released properly.
+
+Other session handling systems do not have the nice functionality of UNIX file descriptors to fall back on when things go wrong.  It'll be nearly impossible to create a bullet proof system, so the best thing to do is make sure it fails gracefully, can recover quickly when it does fail, and doesn't end up causing serious session data corruption.
+
+Something you should avoid is trying to control access to session data from the client and attempting to acquire a single lock that encompasses multiple Ajax requests.  Group a series of operations into a single logical atomic unit that you expect to be executed all together.  This isn't so much avoiding the problem, but rather recognizing that the network, the client software, and the user are the most unreliable parts of the whole system, and that things like network outages, browser crashes, and user attention spans can end up causing you headaches if you don't program defensively.  Locks should be held closest to where the data is manipulated and for the shorted amount of time possible.
+
+<h2><a name="the-code">The Code</a></h2>
+
+The code used for the demo app can be downloaded from <a href="http://race.phux.net/code/">this code directory</a>.  Included is code I've acquired elsewhere, including Ying Zhang's <tt>session_mysql.php</tt> (although, I believe I've hacked it up a bit since I originally downloaded it), and a modified version that acquires an exclusive lock on the entire session when using MySQL.
+
+To use the ThreadSafeSessionArray objects in your own code, all you need to do is remove your call to <tt>session_start()</tt> and replace it with the following code (be sure this code is in the global scope):
+<pre>
+$SESS_DBHOST = DBHOST;      /* database server hostname */
+$SESS_DBNAME = DATABASE;    /* database name */
+$SESS_DBUSER = DBUSER;      /* database user */
+$SESS_DBPASS = DBPASS;      /* database password */
+
+require_once "session_mysqlpervar.php";
+$_SESSION = new ThreadSafeSessionArray();
+</pre>
+Including the file and instantiating ThreadSafeSessionArray will take care of calling <tt>session_start()</tt> and <tt>session_set_save_handler()</tt> for you.  After that, just use $_SESSION like you normally would, but with the added benefit of being able to avoid race conditions when necessary.
+
+<div id="byline">
+ -- Andy Bakun; November 11th, 2006
+</div>
+
+</div>
+</div>
+<script src="http://www.google-analytics.com/urchin.js" type="text/javascript"></script>
+<script type="text/javascript">
+_uacct = "UA-1025506-1";
+urchinTracker();
+</script>
+</body>
+</html>
