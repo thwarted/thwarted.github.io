@@ -1,0 +1,26 @@
+--- vorbis-tools-1.0.orig/ogg123/remote.c
++++ vorbis-tools-1.0/ogg123/remote.c
+@@ -131,7 +131,10 @@
+     /* Read a line */
+     buf[0] = 0;
+     send_log("Waiting for input: ...");
+-    fgets(buf, MAXBUF, stdin);
++    if (!fgets(buf, MAXBUF, stdin)) {
++      setstatus(QUIT);
++      done = 1;
++    }
+     buf[strlen(buf)-1] = 0;
+  
+     /* Lock on */
+@@ -140,6 +143,10 @@
+     send_log("Input: %s", buf);
+     error = 0;
+  
++    if (done) {
++      ignore = 0;
++      error = 0;
++    } else
+     if (!strncasecmp(buf,"l",1)) {
+        /* prepare to load */
+       if ((b=strchr(buf,' ')) != NULL) {
+

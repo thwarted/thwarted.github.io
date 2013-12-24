@@ -1,0 +1,59 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<meta http-equiv="content-type" content="text/html; charset=iso-8859-1" />
+<title>Thundaural Jukebox</title>
+<meta name="description" content="Thundaural Jukebox, software for a touchscreen, kiosk-style dedicated jukebox." />
+<meta name="keywords" content="Thundaural jukebox touchscreen SDL perl" />
+<link type="image/png" rel="shortcut icon" href="images/thundaural-logo-touch-favicon.png" />
+<link type="text/css" rel="stylesheet" href="styles.css" title="default" />
+</head>
+<body>
+<div id="Header"><a href="index.html">Thundaural Jukebox</a></div>
+<img class="logosched" src="images/thundaural-logo-sched.png" />
+<img class="logotouch" src="images/thundaural-logo-touch.png" />
+
+<div id="Content">
+
+<h1>Overview</h1>
+<p>My pool room needed a better music selection system.  We had been using an ancient CD player, one so old that if you put your drink down on the table next to it, it would skip.  Usually, when we wanted to queue up a lot of songs, usually for a party, we'd load the five-disc DVD player and play through that.  This works fine as long as you don't need to change the discs, there by causing a longish pause in the music, and unfortunately this would discourage guests from getting involved and picking their own favorites.</p>
+<p>My girlfriend didn't like having to change the discs in the single disc player we had, and it becomes so inconvenient to change a disc or pick out something new, you end up listening to entire discs, rather than picking and choosing a wider variety of music.  She wanted to get a 150+ disc changer, but that seemed kind of expensive considering it didn't actually make choosing a disc or song any easier -- you'd still need to keep the liner notes easily accessible to be able to know which slot has what.  Also, there is something to be said for the tactile experience of fingering through the physical media.</p>
+<p>Obviously, something more purely digital would apply here, I need the kind of dynamic setup that only software can provide, rather than some kind of old-skool stereo component-styled hardware with a static interface.  One thing I don't like about medium- to high-end stereo components is that they have interfaces that cater to audiophiles, rather than than the more pedestrian user.</p><p>I found some interesting monster CD/DVD changers from Kenwood, and some "media center" hardware that wants to replace everything <b>and</b> hooks up to your television, but none of them really fit the bill; I don't have a television in my pool room for this purpose, and I don't want to have to find a remote.  There's a lot of jukebox projects going on out there, but most of them are oriented toward playing music in the background while you use your computer for other tasks.  One of the other features I wanted was the ability to queue up songs from multiple, different interfaces, namely a web browser.  A lot of jukebox software has that, but the main, default interfaces weren't very interactive or were not really optimzed for kiosk style setup.  Then there are projects like <a href="http://www.mythtv.org/">MythTV</a> and <a href="http://freevo.sourceforge.net/">Freevo</a>, but those seem to be mainly geared toward indexing and selection only, plus there's a lot of non-music related features that I had trouble coming to terms with having to disable or remove.</p>
+<p>I settled on using a touchscreen, with a client/server model.  A dedicated machine stores all the music and the does the bulk of the work -- this machine would also have a CDROM drive to rip additional discs.  Actually playing the music requires such a small load, the touchscreen interface client also runs here.  Along with a web server to serve up the web interface, everything ends up being pretty self-contained, but with the flexiblity for expansion and stability that the client/server model allows.</p>
+<p>On the hardware side, the machine is a small form factor <a href="http://www.shuttle.com/hq/product/barebone/specs_b.asp?B_id=10">Shuttle XPC SK41G</a> with an AMD Athlon XP 2400+.  The touchscreen is an <a href="http://www.elotouch.com/products/lcds/1525l.asp">Elo Touchsystems 1525L</a>, which XFree86 supports (and appears to have for a long while).</p>
+<p>As for software, the server portion is written in perl.  The touchscreen interface is also written in <a href="http://www.perl.org">perl</a> and displayed using <a href="http://www.libsdl.org">SDL</a>, using a slightly modified <a href="http://www.sdlperl.org">SDL-perl</a>.  The web interface is, so far, written in <a href="http://www.php.net/">PHP</a>.  
+All this runs on top of an installation of <a href="http://www.trustix.org/">Trustix</a>, which is targeted toward headless server installations -- but with a few packages from the contrib area and a few ports from <a href="http://www.freshrpms.net/">FreshRPMS</a>, it can be a full-fledged graphical environment.  The server portion stores all its data in a simple <a href="http://www.sqlite.org/">SQLite</a> database (I know, I know, <a href="http://www.jwz.org/gronk/">jwz would disagree on the usefulness of an RDBMS in this context</a>, but the goal here is not to just create an index, but also collect statistics and produce reports (that are then used as future inputs)).  The server supports changing the volume, pausing and skipping the current track, and ripping cdroms.</p>
+</div>
+
+<div id="Menu">
+<div id="MenuLinks">
+	<a href="index.html">news</a><br />
+	<a href="overview.html">overview</a><br />
+	<a href="todo.html">todo</a><br />
+	<a href="screenshots.html">screenshots</a><br />
+	<a href="requiredsoftware.html">required software</a><br />
+	<a href="downloads.html">downloads</a><br />
+    <a href="https://github.com/thwarted/thundaural">thundaural at github</a><br />
+	<a href="installation.html">installation</a><br />
+	<hr/>
+	<a href="serverdocs.html">server command reference</a><br />
+	<hr/>
+	<a href="http://www.libsdl.org/">SDL</a><br />
+	<a href="http://sdl.perl.org/">SDL-perl</a><br />
+    <hr/>
+	<a href="http://www.freshrpms.net/">FreshRPMS</a><br />
+	<a href="http://www.rpmfind.net/">rpmfind</a><br />
+    <hr/>
+	<a href="http://www.xiph.org/ogg/vorbis/">OggVorbis</a><br />
+    <hr/>
+	<a href="http://www.tinysofa.org/">TinySofa Linux</a><br />
+	<a href="http://www.trustix.org/">Trustix Secure Linux</a><br />
+</div>
+
+</div>
+<div id="Credit"> 
+It should be noted that <a href="http://bluerobot.com/">BlueRobot's</a> sphere of influence extends to this part of the internet.
+</div>
+<div id="lastmod">Last modified Sun, Sep 12th, 2010, 13:41:23</div>

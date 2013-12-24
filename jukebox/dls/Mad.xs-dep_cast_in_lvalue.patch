@@ -1,0 +1,108 @@
+--- Mad.xs.original	2005-10-25 23:48:57.000000000 -0500
++++ Mad.xs	2005-10-25 23:56:48.000000000 -0500
+@@ -41,7 +41,7 @@
+ 		char *CLASS = NO_INIT
+ 		int options
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		mad_stream_init(RETVAL);
+ 		
+ 		if (options)
+@@ -134,7 +134,7 @@
+ new(CLASS)
+ 		char *CLASS = NO_INIT;
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		mad_frame_init(RETVAL);
+ 	OUTPUT:
+ 		RETVAL
+@@ -200,7 +200,7 @@
+ duration(THIS)
+ 		Audio_Mad_Frame THIS
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		*RETVAL = THIS->header.duration;
+ 	OUTPUT:
+ 		RETVAL
+@@ -226,7 +226,7 @@
+ new(CLASS)
+ 		char *CLASS = NO_INIT;
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		mad_synth_init(RETVAL);
+ 	OUTPUT:
+ 		RETVAL
+@@ -279,7 +279,7 @@
+ 		unsigned long frac;
+ 		unsigned long denom;
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		*RETVAL = mad_timer_zero;
+ 
+ 		if (items == 3)
+@@ -291,7 +291,7 @@
+ new_copy(THIS)
+ 		Audio_Mad_Timer THIS
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		*RETVAL = *THIS;
+ 	OUTPUT:
+ 		RETVAL
+@@ -396,7 +396,7 @@
+ 		unsigned int oldrate
+ 		unsigned int newrate
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		mad_resample_init(RETVAL, oldrate, newrate);
+ 	OUTPUT:
+ 		RETVAL
+@@ -450,7 +450,7 @@
+ 		bufsize = old_length * ((int)((double)1 / fscale) + 1);
+ 		
+ 		data = (mad_fixed_t *)SvPV_nolen(left);
+-		Newz(0, (void *)resampled, bufsize, mad_fixed_t);
++		Newz(0, resampled, bufsize, mad_fixed_t);
+ 			
+ 		length = mad_resample_block(THIS, &THIS->state[0], old_length, data, resampled);
+ 		PUSHs(sv_2mortal(newSVpvn((char *)resampled, sizeof(mad_fixed_t) * length)));
+@@ -465,7 +465,7 @@
+ 			/* ugh..  that always looks ugly..  but it works */
+ 			
+ 			data = (mad_fixed_t *)SvPV_nolen(right);
+-			Renew((void *)resampled, bufsize, mad_fixed_t);
++			Renew(resampled, bufsize, mad_fixed_t);
+ 			
+ 			length = mad_resample_block(THIS, &THIS->state[1], old_length, data, resampled);
+ 			PUSHs(sv_2mortal(newSVpvn((char *)resampled, sizeof(mad_fixed_t) * length)));
+@@ -487,7 +487,7 @@
+ 		char *CLASS = NO_INIT;
+ 		int type
+ 	CODE:
+-		Newz(0, (void *)RETVAL, sizeof(*RETVAL), char);
++		Newz(0, RETVAL, sizeof(*RETVAL), char);
+ 		mad_dither_init(RETVAL, type);
+ 	OUTPUT:
+ 		RETVAL
+@@ -522,13 +522,13 @@
+ 		left = (mad_fixed_t *)SvPV_nolen(leftsv);
+ 		if (!SvPOK(rightsv)) {
+ 			length = old_length * THIS->pcmlength;
+-			Newz(0, (void *)cooked, length, char);
++			Newz(0, cooked, length, char);
+ 		} else {
+ 			if (old_length != (SvLEN(rightsv) / sizeof(mad_fixed_t))) {
+ 				XSRETURN_UNDEF;
+ 			}
+ 			length = old_length * THIS->pcmlength * 2;
+-			Newz(0, (void *)cooked, length, char);
++			Newz(0, cooked, length, char);
+ 			right = (mad_fixed_t *)SvPV_nolen(rightsv);
+ 		}
+ 

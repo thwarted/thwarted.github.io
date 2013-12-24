@@ -1,0 +1,115 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<meta http-equiv="content-type" content="text/html; charset=iso-8859-1" />
+<title>Thundaural Jukebox</title>
+<meta name="description" content="Thundaural Jukebox, software for a touchscreen, kiosk-style dedicated jukebox." />
+<meta name="keywords" content="Thundaural jukebox touchscreen SDL perl" />
+<link type="image/png" rel="shortcut icon" href="images/thundaural-logo-touch-favicon.png" />
+<link type="text/css" rel="stylesheet" href="styles.css" title="default" />
+</head>
+<body>
+<div id="Header"><a href="index.html">Thundaural Jukebox</a></div>
+<img class="logosched" src="images/thundaural-logo-sched.png" />
+<img class="logotouch" src="images/thundaural-logo-touch.png" />
+
+<div id="Content">
+
+<h1>Downloads</h1>
+
+<h3>Latest</h3>
+<p>The tar.bz2 contain an INSTALL file and a copy of the CHANGELOG, along with the code for both the server and the client.  Versions from 1.3 and on include a script to help you check installation and run-time dependencies.
+<dl>
+<dt><a href="CHANGELOG.txt">CHANGELOG</a></dt>
+	<dd>The changelog.</dd>
+<dt><a href="https://github.com/thwarted/thundaural">The latest version can be downloaded from github.</a></dt>
+    <dd>Both the server and the client are being distributed together now.  Also includes some font files that 
+	I'm not using and some other stuff that's checked into source control that I have not removed yet.  See the 
+	included INSTALL file and the <a href="installation.html">installation page</a> for installation instructions.</dd>
+</dl>
+<hr/>
+<h3>Dependencies</h3>
+<p>This is not an exhaustive list of dependancies.  See the <tt>INSTALL*</tt> files in the distribution for a complete list.</p>
+<dl>
+<dt><a href=dls/SDL_Perl-2.1.0-3tef.tar.bz2">SDL_Perl-2.1.0-3tef.tar.bz2</a></dt>
+	<dd>(sha1sum 15c8177699dbcdd4d1765355d96282d00ec3bfce)<br/>
+	My custom version of SDL_Perl.  There are a number of modifications, mainly, an interface to the SDL_PushEvent function, and
+    a bunch of bug fixes.<br/>
+	I've sent my changes off to the SDL_Perl maintainers, and I'm told they will appear in a future release.  Until such a release 
+	is made, use this version, as it has the patch for the functions that Thundaural needs already applied. It is otherwise 
+	exactly the same as the version available from <a href="http://sdl.perl.org/">sdl.perl.org</a>.<br/>
+    You can also grab the latest and greatest from my subversion repository at <a href="http://phux.net/websvn/">http://phux.net/websvn/</a>.  There are some minor fixes in source control that have not made it to this download page yet.
+	Also available are these older versions:
+        <ul><li><a href=dls/SDL_perl-2.0.2-thundaural.tar.bz2">2.0.2</a></li>
+            <li><a href=dls/SDL_Perl-2.1.0-eventpush.tar.bz2">SDL_Perl-2.1.0-eventpush.tar.bz2</a></li></ul>
+	</dd>
+	<!--
+<dt><a href=dls/vorbis-tools-1.0.1-1+remote.src.rpm">vorbis-tools-1.0.1-1+remote.src.rpm</a><br/>
+<i>or</i><br/>
+<a href=dls/vorbis-tools-1.0-remote2patch.aab">vorbis-tools-1.0-remote2patch.aab</a> <i>and</i> <a href=dls/vorbis-tools-1.0.1.tar.gz">vorbis-tools-1.0.1.tar.gz</a><dt>
+	<dd>Originally, <a href="http://www.t3i.nl/shareware/">t3i.nl</a> had a patch to ogg123 to give it "remote" functionality, similar to mpg123's.  Well, <a href="http://www.xiph.org">xiph.org</a> apparently decided to release a newer version of vorbis-tools than this patch could handle (or something, I don't know for sure).  But on top of that, t3i.nl's patch had a bug in it, whereby if stdin was closed, it would go into an infinite loop.  I provided a patch to that patch to fix that bug, and sent it to the guy who wrote the original patch, who I never heard back from.  t3i.nl didn't allow direct links to their stuff, so I didn't want to put his patch on my site (they obviously wanted the hits or something), so I provided a link to their root page and my patch against their patch.  So I go to install a new jukebox, and none of this stuff is patching cleanly.  So I redid the whole thing, and I'm providing a patch to the xiph.org source with both t3i.nl's remote patch plus my fix for their patch.  You need <i>either</i> the src.rpm, which contains the patch itself, but is otherwise the 1.0.1-1 src.rpm from xiph.org<sup>*</sup>, <i>or</i> the .tar.gz and the -remote2patch.aab, which you should apply with <tt>patch -p1</tt>.<br/>
+	<br/>
+	* If you use the .src.rpm, note that I've commented out the lines that designate the requirements of FLAC and Speex, so if you want those to be listed as dependancies for the resultant RPM (which are not required for Thundaural), then you'll need to uncomment them.
+	This section <i>used to</i> say:<blockquote>
+	<a href="do not use">ogg123.stdinclose.patch</a><br/>
+	a patch against <a href="http://www.t3i.nl/shareware/"><strike>http://www.t3i.nl/shareware/vorbis-tools-1.0-remote-patched-2.tgz</strike></a> that fixes a bug in the remote control code.  You can't download that patch directly from that site, you have to browse for it.</blockquote>which I'm keeping for the record.
+	-->
+	</dd>
+</dl>
+
+<hr/>
+<h3>Previous Releases</h3>
+Previous releases are available on github.
+<hr/>
+<h3>Legacy files</h3>
+<dl>
+<dt><a href=dls/jukeboxdb-schema.mysql.sql">jukeboxdb-schema.mysql.sql</a></dt>
+	<dd>The database schema for the jukebox, mysql syntax.  The code doesn't currently support MySQL, but changing it to use MySQL (or the database backend of your choice)
+	shouldn't be to hard, just need to change the server code's DBD definitions.  Note that there are a few things in the server code that SQLite supports that MySQL doesn't
+	(like views) that you'll have to work around.</dd>
+<dt><a href=dls/jukeboxdb-schema.sqlite.sql">jukeboxdb-schema.sqlite.sql</a></dt>
+	<dd>
+	The database schema for the jukebox, sqlite syntax.  
+	For reference only.  The current authoritative source for the database schema is in server/DatabaseSetup.pm.  There is also a file database/schema.sql in the 
+	server distribution, but that might not be up to date.
+	</dd>
+<dt>msfonts-1.2.1-1.noarch.rpm</dt>
+	<dd>These fonts are no longer used.  I'm unable to verify my ability to redistribute them, and the Bitstream Vera font, which is
+	freely redistributable, looks better.
+	</dd>
+</dl>
+
+</div>
+
+<div id="Menu">
+<div id="MenuLinks">
+	<a href="index.html">news</a><br />
+	<a href="overview.html">overview</a><br />
+	<a href="todo.html">todo</a><br />
+	<a href="screenshots.html">screenshots</a><br />
+	<a href="requiredsoftware.html">required software</a><br />
+	<a href="downloads.html">downloads</a><br />
+    <a href="https://github.com/thwarted/thundaural">thundaural at github</a><br />
+	<a href="installation.html">installation</a><br />
+	<hr/>
+	<a href="serverdocs.html">server command reference</a><br />
+	<hr/>
+	<a href="http://www.libsdl.org/">SDL</a><br />
+	<a href="http://sdl.perl.org/">SDL-perl</a><br />
+    <hr/>
+	<a href="http://www.freshrpms.net/">FreshRPMS</a><br />
+	<a href="http://www.rpmfind.net/">rpmfind</a><br />
+    <hr/>
+	<a href="http://www.xiph.org/ogg/vorbis/">OggVorbis</a><br />
+    <hr/>
+	<a href="http://www.tinysofa.org/">TinySofa Linux</a><br />
+	<a href="http://www.trustix.org/">Trustix Secure Linux</a><br />
+</div>
+
+</div>
+<div id="Credit"> 
+It should be noted that <a href="http://bluerobot.com/">BlueRobot's</a> sphere of influence extends to this part of the internet.
+</div>
+<div id="lastmod">Last modified Sun, Sep 12th, 2010, 13:41:24</div>
