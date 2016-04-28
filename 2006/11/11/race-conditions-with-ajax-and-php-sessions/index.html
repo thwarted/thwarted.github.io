@@ -109,7 +109,7 @@ While it may be useful in some specific corner cases, you are most likely not go
 <h2><a name="default-php-session-handler">The Default PHP Session Handler</a></h2>
 The built-in PHP session handler is designed for use with a single web server, since it stores the session data on the local filesystem.  Once you need to scale up to multiple web servers, another solution is necessary.  Fortunately, for the developer who will roll their own PHP session handler, there's <a href="http://www.php.net/manual/en/function.session-set-save-handler.php#AEN178206">sample code on the session_set_save_handler documentation page</a>, which, one would be led to believe, is pretty much how the built-in session handler is implemented.  And it is, almost.
 
-What this sample code does not include is the fact that the built-in session handler uses the <a href="http://unixhelp.ed.ac.uk/CGI/man-cgi?flock+2">flock(2) system call</a> (available as <a href="http://us2.php.net/manual/en/function.flock.php">flock</a> in PHP).  This can be verified by using <a href="http://sourceforge.net/projects/strace/">strace</a> to list all the system calls being made by a process.  Here's the important bit:
+What this sample code does not include is the fact that the built-in session handler uses the <a href="http://man7.org/linux/man-pages/man2/flock.2.html">flock(2) system call</a> (available as <a href="http://us2.php.net/manual/en/function.flock.php">flock</a> in PHP).  This can be verified by using <a href="http://sourceforge.net/projects/strace/">strace</a> to list all the system calls being made by a process.  Here's the important bit:
 <pre>
 open("/var/lib/php/session/sess_XXXXXXXXXXXXXXXXXXXXXXXXXX", O_RDWR|O_CREAT, 0600) = 18
 flock(18, LOCK_EX)                      = 0
